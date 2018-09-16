@@ -95,6 +95,13 @@ struct
   fun gety(x,y,z)=y
   fun getz(x,y,z)=z
 
+  fun getString(p :t)=
+    let
+        val (a,b,c) = p
+    in
+        "(" ^ Real.toString(a) ^","^ Real.toString(b) ^","^ Real.toString(c) ^")"
+    end
+
  end
 
 structure currentFrame = 
@@ -129,6 +136,12 @@ struct
     Postwo
   end
 
+  fun getAircraft(m :t) = 
+  let 
+    val (cs,_,_) = m
+  in
+    cs
+  end
 
   (*returns the intersection of two motions if exists, returns Pos.errocode
   * otherwise *)
@@ -291,6 +304,39 @@ struct
     if (nearlyEqual(a,d,0.01) andalso nearlyEqual(b,e,0.01)) then true else false
   end
 
+end
+
+
+structure Collision = 
+struct 
+  (*aircraft one, aircraft two, position where collision happened*)
+  type t = string * string  * Pos.t
+
+  fun create (a1,a2,intersection:Pos.t) = (a1,a2,intersection)
+
+  fun empty () :t list = []
+
+  fun getLocation (c :t) = 
+  let
+    val (one,two,pos) = c
+  in
+    pos
+  end
+
+  fun getAircraftOne(c :t) = 
+  let
+    val (one,two,pos) =c
+  in
+    one
+  end
+
+  fun getAircraftTwo(c :t) = 
+  let
+    val (one,two,pos) = c
+  in 
+    two
+  end
+
 end 
  
 structure VoxelMap  = 
@@ -330,52 +376,6 @@ struct
  
 end
 
-
-
-(*Call signs are indexed per plane in the array. i.e. callsign at index i is the
-* callsign of plane i
-* If the callsign is not present in statetable, then the motion is same as
-* current Position. If callsign is present motion is vector from old Position to
-* new Position*)
-fun TCM (i) = 
-        let 
-          val p :Pos.t = Array.sub(currentFrame.Positions, i)
-          val c  = Array.sub(currentFrame.callsigns, i)
-
-        fun createMotions (cs, Position :Pos.t) = 
-            let 
-                val old_Pos = StateTable.get(cs)
-            in
-              (StateTable.put(cs,Position);
-              if Pos.eq(old_Pos,Pos.errorcode) then 
-               (cs,Position,Position) else
-                (cs,old_Pos,Position) )
-            end
-
-        in
-        createMotions (c,p)
-        end;
-
-
-(*returns list of motions*)
-fun TRANSIENTDETECTOR_createMotions() = 
-let
-   val mo : Motion.t list = []
- in
-   for (1 to RAWFRAME_MAX_PLANES) (fn i => TCM(i)
-   :: mo);
-   mo
- end;
-
-
-
-
-fun TRANSIENTDETECTOR_run() = 
- let
-   val motions : Motion.t list = TRANSIENTDETECTOR_createMotions();
- in
-   ()
- end;
 
 
 
@@ -571,13 +571,106 @@ in
 end 
 
 
-
-fun determineCollisions(motions) = 
+(*returns list of triples Aircraft1 * aircraft2 * coordinates of collision 
+* Each list of motions corresponds to motions in a voxel that can possibly have
+* collisions. there can be more than one collision in a voxel hence it returns
+* list of collisions
+* *)
+fun determineCollisions(motions : Motion.t list) = 
 let
-  val one :: two :: tl = motions
+  
+  val ret = Collision.empty()
+
+  fun determine ([]) = ret 
+    | determine (one :: tl) = 
+  let 
+    val two = List.hd (tl )
+    val vec = Motion.findIntersection(one,two)
+  in
+    if not (Pos.eq(vec,Pos.errorcode)) then
+     (Collision.create(Motion.getAircraft(one),Motion.getAircraft(two),vec) ::
+     ret;
+     determine(tl))
+    else
+     determine(tl)
+  end  
+
 in
- ()
+    determine(motions)
 end 
+
+
+
+fun lookforCollisions(motions : Motion.t list) = 
+let
+  val check = reduceCollisionSet(motions) (*List of list of motions*)
+
+  val c = Collision.empty()
+
+  fun map f [] = []
+    | map f (x :: xs) = (f x @ map f xs )
+in 
+ c @ map determineCollisions check 
+end
+
+
+
+
+
+(*Call signs are indexed per plane in the array. i.e. callsign at index i is the
+* callsign of plane i
+* If the callsign is not present in statetable, then the motion is same as
+* current Position. If callsign is present motion is vector from old Position to
+* new Position*)
+fun TCM (i) = 
+        let 
+          val p :Pos.t = Array.sub(currentFrame.Positions, i)
+          val c  = Array.sub(currentFrame.callsigns, i)
+
+        fun createMotions (cs, Position :Pos.t) = 
+            let 
+                val old_Pos = StateTable.get(cs)
+            in
+              (StateTable.put(cs,Position);
+              if Pos.eq(old_Pos,Pos.errorcode) then 
+               (cs,Position,Position) else
+                (cs,old_Pos,Position) )
+            end
+
+        in
+        createMotions (c,p)
+        end;
+
+
+(*returns list of motions*)
+fun TRANSIENTDETECTOR_createMotions() = 
+let
+   val mo : Motion.t list = []
+ in
+   for (1 to RAWFRAME_MAX_PLANES) (fn i => TCM(i)
+   :: mo);
+   mo
+ end;
+
+
+
+
+fun TRANSIENTDETECTOR_run() = 
+ let
+   val motions : Motion.t list = TRANSIENTDETECTOR_createMotions();
+
+    val collisions = lookforCollisions(motions)
+
+   fun printResults ([],index) = ()
+     | printResults (c :: tl,index) = (print("CD Collision" ^ Int.toString(index) ^ "occured at location " ^ Pos.getString(Collision.getLocation(c)) ^
+                                        " with aircraft " ^ Collision.getAircraftOne(c) ^ " and aircraft " ^
+                                        Collision.getAircraftTwo(c) ^ "\n" );
+                                       printResults(tl,index+1))
+ in
+   (print ("CD detected " ^ Int.toString(List.length(collisions)) ^ " collisions \n");
+   printResults(collisions,0)
+   )
+ end;
 
 
 
