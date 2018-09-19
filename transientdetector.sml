@@ -104,15 +104,162 @@ struct
 
  end
 
-structure currentFrame = 
+
+structure Frames =
 struct 
-  datatype T =  Frame;
-  val lengths : int array = Array.array(RAWFRAME_MAX_PLANES,0);
+
+
+ type t =  (int * string array * Pos.t array) option;
+  (*val lengths : int array = Array.array(RAWFRAME_MAX_PLANES,0);
   val callsigns = Array.array(RAWFRAME_MAX_SIGNS,"a");
-  val Positions : Pos.t array =
+  val positions : Pos.t array =
+    Array.array(RAWFRAME_MAX_PLANES,(0.0,0.0,0.0));
+  val planecnt : int ref  = ref 0; *)
+
+  val empty :t  = NONE
+
+
+  exception EmptyFrame;
+
+  fun getCallsigns(frame:t) =
+  let
+    val (n,cs,pos) = Option.valOf(frame)
+  in
+    if Option.isSome(frame) then cs else raise EmptyFrame
+  end
+
+  fun getPosition(frame:t)=
+  let 
+    val (n,cs,pos) = Option.valOf(frame)
+  in
+    if Option.isSome(frame) then pos else raise EmptyFrame 
+  end
+
+  fun getPlaneCnt(frame:t) = 
+  let
+    val (n,cs,pos) = Option.valOf(frame)
+  in 
+    if Option.isSome(frame) then n else raise EmptyFrame 
+  end
+
+ 
+  open TextIO
+
+ fun arrayToList arr = Array.foldr (op ::) [] arr
+ fun printList (xs, sep, f) = print (String.concatWith sep (map f xs))
+ fun printFrame (nameArr, posArr) = 
+     let
+         val nameLs = arrayToList nameArr
+         val posLs  = arrayToList posArr
+          
+     in
+         for (1 to (Array.length(nameArr)-1)) (fn i => print(Array.sub(nameArr,i)^" "^Pos.getString(Array.sub(posArr,i)) ^ "\n") )
+
+     end
+
+
+
+  exception InvalidNumber;
+  
+  fun readFromFile (f) =
+  let
+    val filestream = openIn(f)
+
+
+    fun readFrame (stream) = 
+        let
+            fun revLsToArr x = Array.fromList(List.rev x)  
+
+            fun convertTuple(l) = 
+              let
+                val one :: xs = l
+                val two::ys = xs
+                val three :: zs = ys 
+              in
+                (*print(Real.toString(one)^"\n");
+                print(Real.toString(two)^"\n");
+                print(Real.toString(three)^"\n");*)
+                if not (List.null(zs)) then Pos.errorcode else (one,two,three)
+              end 
+
+
+            fun processLine line =
+                let val (name::(rest)) = String.tokens (fn c => c = #" ") line
+                in
+                (name, convertTuple (map (fn n => case Real.fromString n of
+                                 SOME number => number
+                               | NONE => raise InvalidNumber)
+                   rest))
+                end
+            fun readlines (firstLs, secondLs) =
+                case TextIO.inputLine(stream) of
+                    SOME line => if String.isPrefix("Frame")(line) then 
+                          readlines (firstLs, secondLs)
+                        else if String.size(line) > 1 then 
+                          let 
+                            val (name, pos) = processLine(line) 
+                          in
+                            readlines ((name::firstLs), (pos::secondLs))
+                          end
+                        else
+                          (firstLs, secondLs)
+
+                    | NONE      => (firstLs, secondLs)
+            val (nameLs, posLs) = readlines([], [])
+
+
+
+        in
+           (revLsToArr nameLs, revLsToArr posLs)
+        end
+
+
+
+
+    
+  in
+     readFrame(filestream)
+  end
+
+
+  (*structure currentFrame = 
+    struct 
+  datatype T =  Frame;
+  (*val lengths : int array = Array.array(RAWFRAME_MAX_PLANES,0);*)
+  val callsigns = Array.array(RAWFRAME_MAX_SIGNS,"a");
+  val positions : Pos.t array =
     Array.array(RAWFRAME_MAX_PLANES,(0.0,0.0,0.0));
   val planecnt : int ref  = ref 0; 
 end
+*)
+
+  fun createFrameBuffer(f)=
+  let
+    val (cs,pos) = readFromFile(f)
+
+    (*getting num of planes from num of callsigns instead of frames file*)
+    val nplanes = Array.length(cs)
+
+    val frameBuffer :t list = []
+
+
+  in
+    SOME (nplanes,cs,pos) :: frameBuffer
+  end  
+
+  
+
+end
+
+(*structure CurrentFrame = 
+struct 
+  (*val lengths : int array = Array.array(RAWFRAME_MAX_PLANES,0);
+  val callsigns = Array.array(RAWFRAME_MAX_SIGNS,"a");
+  val positions : Pos.t array =
+    Array.array(RAWFRAME_MAX_PLANES,(0.0,0.0,0.0));
+  val planecnt : int ref  = ref 0; *)
+
+end*)
 
 
 structure Motion = 
@@ -622,10 +769,10 @@ end
 * If the callsign is not present in statetable, then the motion is same as
 * current Position. If callsign is present motion is vector from old Position to
 * new Position*)
-fun TCM (i) = 
+fun TCM (i,currentFrame) = 
         let 
-          val p :Pos.t = Array.sub(currentFrame.Positions, i)
-          val c  = Array.sub(currentFrame.callsigns, i)
+          val p :Pos.t = Array.sub(Frames.getPosition(currentFrame), i)
+          val c  = Array.sub(Frames.getCallsigns(currentFrame), i)
 
         fun createMotions (cs, Position :Pos.t) = 
             let 
@@ -643,11 +790,11 @@ fun TCM (i) =
 
 
 (*returns list of motions*)
-fun TRANSIENTDETECTOR_createMotions() = 
+fun TRANSIENTDETECTOR_createMotions(currentFrame) = 
 let
    val mo : Motion.t list = []
  in
-   for (1 to RAWFRAME_MAX_PLANES) (fn i => TCM(i)
+   for (1 to RAWFRAME_MAX_PLANES) (fn i => TCM(i,currentFrame)
    :: mo);
    mo
  end;
@@ -655,9 +802,9 @@ let
 
 
 
-fun TRANSIENTDETECTOR_run() = 
+fun TRANSIENTDETECTOR_run(currentFrame) = 
  let
-   val motions : Motion.t list = TRANSIENTDETECTOR_createMotions();
+   val motions : Motion.t list = TRANSIENTDETECTOR_createMotions(currentFrame);
 
     val collisions = lookforCollisions(motions)
 
@@ -674,6 +821,35 @@ fun TRANSIENTDETECTOR_run() =
 
 
 
+
+
+
+
+structure Driver = 
+struct
+
+
+  (*To do read properly from file*)
+
+    fun main() = 
+    let 
+      val frameBuffer = Frames.createFrameBuffer("frames.txt")
+        
+      fun loop ([]) = ()
+        | loop(x::xs) =(TRANSIENTDETECTOR_run(x) ; loop xs)
+    in
+      loop frameBuffer
+    end
+
+
+
+
+end
+
+
+
+
+val _ = Driver.main()
 
 
 val _ = print ("done\n")
