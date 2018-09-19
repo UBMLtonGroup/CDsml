@@ -142,31 +142,35 @@ struct
     if Option.isSome(frame) then n else raise EmptyFrame 
   end
 
+  fun createFrame(n :int,cs:string array,pos :Pos.t array) :t =
+    SOME (n,cs,pos)
  
   open TextIO
 
  fun arrayToList arr = Array.foldr (op ::) [] arr
  fun printList (xs, sep, f) = print (String.concatWith sep (map f xs))
- fun printFrame (nameArr, posArr) = 
+ 
+ fun printFrame (f :t) = 
      let
-         val nameLs = arrayToList nameArr
-         val posLs  = arrayToList posArr
+         val nplanes = getPlaneCnt(f)
+         val posArr  = getPosition(f)
+         val csArr = getCallsigns(f)
           
      in
-         for (1 to (Array.length(nameArr)-1)) (fn i => print(Array.sub(nameArr,i)^" "^Pos.getString(Array.sub(posArr,i)) ^ "\n") )
+
+         print("\n");
+         for (0 to (nplanes-1)) (fn i => print(Array.sub(csArr,i)^" "^Pos.getString(Array.sub(posArr,i)) ^ "\n") )
 
      end
 
-
+ 
 
   exception InvalidNumber;
+
+
+  val frameBuffer :t list ref= ref []
   
-  fun readFromFile (f) =
-  let
-    val filestream = openIn(f)
-
-
-    fun readFrame (stream) = 
+  fun readFrame (stream) = 
         let
             fun revLsToArr x = Array.fromList(List.rev x)  
 
@@ -191,34 +195,57 @@ struct
                                | NONE => raise InvalidNumber)
                    rest))
                 end
-            fun readlines (firstLs, secondLs) =
-                case TextIO.inputLine(stream) of
-                    SOME line => if String.isPrefix("Frame")(line) then 
-                          readlines (firstLs, secondLs)
+
+            (*reads one frame and returns rest of stream*)    
+            fun readlines (firstLs, secondLs,strm) =
+                case StreamIO.inputLine(strm) of
+                    SOME (line,str) => if String.isPrefix("Frame")(line) then 
+                          readlines (firstLs, secondLs,str)
+                        else if String.isPrefix("End")(line) then 
+                          (firstLs,secondLs,str)
                         else if String.size(line) > 1 then 
                           let 
                             val (name, pos) = processLine(line) 
                           in
-                            readlines ((name::firstLs), (pos::secondLs))
+                            readlines ((name::firstLs), (pos::secondLs),str)
                           end
                         else
-                          (firstLs, secondLs)
+                          (firstLs, secondLs,str)
 
-                    | NONE      => (firstLs, secondLs)
-            val (nameLs, posLs) = readlines([], [])
+                    | NONE      => (firstLs, secondLs,strm)
+            val (nameLs, posLs,st) = readlines([], [],stream)
 
 
 
         in
-           (revLsToArr nameLs, revLsToArr posLs)
+           (revLsToArr nameLs, revLsToArr posLs,st)
         end
 
+  
+  (*Reads frames from file and populates framebuffer*)
+  fun readFromFile (f) =
+  let
+    val filestream = TextIO.openIn(f)
 
+    
+
+        fun createFrameBuffer(fstream)=
+            let
+                val (cs,pos,remainderStr) = readFrame(fstream)
+
+                (*getting num of planes from num of callsigns instead of frames file*)
+                val nplanes = Array.length(cs)
+
+                val frame = createFrame(nplanes,cs,pos) 
+            in
+                frameBuffer := !frameBuffer @ [frame];
+                if not(StreamIO.endOfStream(remainderStr)) then createFrameBuffer(remainderStr) else !frameBuffer 
+            end  
 
 
     
   in
-     readFrame(filestream)
+     createFrameBuffer(getInstream filestream)
   end
 
 
@@ -233,20 +260,7 @@ struct
 end
 *)
 
-  fun createFrameBuffer(f)=
-  let
-    val (cs,pos) = readFromFile(f)
-
-    (*getting num of planes from num of callsigns instead of frames file*)
-    val nplanes = Array.length(cs)
-
-    val frameBuffer :t list = []
-
-
-  in
-    SOME (nplanes,cs,pos) :: frameBuffer
-  end  
-
+  
   
 
 end
@@ -289,6 +303,19 @@ struct
   in
     cs
   end
+
+  fun printMotion(m :t) = 
+  let
+    val (cs,p1,p2) = m
+  in
+    print("Plane "^ cs ^ " going from " ^ Pos.getString(p1) ^ " to "^
+    Pos.getString(p2) ^"\n")
+  end
+
+  fun printListOfMotions([] :t list) = print ("No motions in list\n")
+    |printListOfMotions(h :: tl) = (printMotion(h); printListOfMotions(tl))
+
+
 
   (*returns the intersection of two motions if exists, returns Pos.errocode
   * otherwise *)
@@ -619,6 +646,11 @@ struct
   end; 
 
 
+  fun containsKey(key,[]) = false
+    |containsKey(key, h:: tl) = if Voxel.eq(key,h) then true else containsKey(key,tl)
+    
+
+
   (*Returns a list of motions which have possible collisions. Unlike in CDj
   * which returns a Hashmap and then extract values from it in reduce collision.*)
   fun dfsVoxelHashRecurse(motion :Motion.t,next_voxel,voxel_map,graph_colors) = 
@@ -659,9 +691,9 @@ struct
 
 
   in
-    if isInVoxel(next_voxel,motion) andalso true then 
+    if isInVoxel(next_voxel,motion) andalso not (containsKey(next_voxel,!graph_colors))  then 
       (
-        next_voxel :: graph_colors;
+        graph_colors :=  next_voxel :: !graph_colors;
         voxel_map := VoxelMap.put(next_voxel,motion,!voxel_map);
 
         dfsVoxelHashRecurse(motion,lb,voxel_map,graph_colors);
@@ -693,12 +725,12 @@ struct
 
 
 (* returns list of list of motions*)
-(*graph_colors need not be a ref because it has to be cleared in perform voxel
-* hashing anyways*)
+(*graph_colors need not be cleared in perform voxelHashing as its called with a
+* ref [] each time in this function*)
 fun reduceCollisionSet(motions :Motion.t list) = 
 let 
   val voxel_map = ref (VoxelMap.makemap())
-  val graph_colors = []
+  val graph_colors = ref []
 
   fun pvh (m) = 
     let 
@@ -774,14 +806,14 @@ fun TCM (i,currentFrame) =
           val p :Pos.t = Array.sub(Frames.getPosition(currentFrame), i)
           val c  = Array.sub(Frames.getCallsigns(currentFrame), i)
 
-        fun createMotions (cs, Position :Pos.t) = 
+        fun createMotions (cs, position :Pos.t) = 
             let 
                 val old_Pos = StateTable.get(cs)
             in
-              (StateTable.put(cs,Position);
+              (StateTable.put(cs,position);
               if Pos.eq(old_Pos,Pos.errorcode) then 
-               (cs,Position,Position) else
-                (cs,old_Pos,Position) )
+               (cs,position,position) else
+                (cs,old_Pos,position) )
             end
 
         in
@@ -793,9 +825,9 @@ fun TCM (i,currentFrame) =
 fun TRANSIENTDETECTOR_createMotions(currentFrame) = 
 let
    val mo : Motion.t list = []
+
  in
-   for (1 to RAWFRAME_MAX_PLANES) (fn i => TCM(i,currentFrame)
-   :: mo);
+   for (0 to (Frames.getPlaneCnt(currentFrame)-1)) (fn i => TCM(i,currentFrame) :: mo);
    mo
  end;
 
@@ -814,7 +846,7 @@ fun TRANSIENTDETECTOR_run(currentFrame) =
                                         Collision.getAircraftTwo(c) ^ "\n" );
                                        printResults(tl,index+1))
  in
-   (print ("CD detected " ^ Int.toString(List.length(collisions)) ^ " collisions \n");
+   (Motion.printListOfMotions(motions);print ("CD detected " ^ Int.toString(List.length(collisions)) ^ " collisions \n");
    printResults(collisions,0)
    )
  end;
@@ -833,11 +865,12 @@ struct
 
     fun main() = 
     let 
-      val frameBuffer = Frames.createFrameBuffer("frames.txt")
+      val frameBuffer = Frames.readFromFile("frames.txt")
         
       fun loop ([]) = ()
-        | loop(x::xs) =(TRANSIENTDETECTOR_run(x) ; loop xs)
+        | loop(x::xs) =( (*Frames.printFrame(x)*) TRANSIENTDETECTOR_run(x) ; loop xs)
     in
+      (*print (Int.toString(List.length(frameBuffer)))*)
       loop frameBuffer
     end
 
