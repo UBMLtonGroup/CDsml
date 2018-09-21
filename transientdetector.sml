@@ -421,7 +421,7 @@ struct
 
   type t = string * Pos.t ref;
 
-  val table : t list = [];
+  val table : t list ref = ref [];
 
 
 
@@ -432,18 +432,18 @@ struct
   
  (* puts a Position in the table. if new, creates a new entry to list, if
  * callsign already exists, updates the Position*)
-  fun put (cs , Position :Pos.t) = 
+  fun put (cs , position :Pos.t) = 
     let
-      val p = search(cs,table)
+      val p = search(cs,!table)
     in
-      if Pos.eq(!p,Pos.errorcode) then ((cs,ref Position) :: table; ())
-      else p:= Position
+      if Pos.eq(!p,Pos.errorcode) then ( table := (cs,ref position) :: !table; ())
+      else p:= position
     end
   
 (*gets the corresponding Position from table, given the callsign*)
   fun get (cs) = 
     let
-      val x = search (cs,table)
+      val x = search (cs,!table)
     in
       !x
     end;
@@ -469,6 +469,12 @@ struct
        else diff / Real.min (absA + absB, Real.maxFinite) < eps )
     end
 
+ fun printVoxel(v :t) = 
+  let
+    val (x,y) = v
+  in
+    print("Voxel : x coordinate "^Real.toString(x)^" y coordinate "^Real.toString(y) ^"\n")
+  end
 
  fun eq ((a:real,b:real), (d:real,e:real)) =
   let
@@ -525,7 +531,7 @@ struct
     | getmotions(v,(voxel,ml):: tl) = 
     if Voxel.eq(v,voxel) then ml else getmotions(v,tl)
      
-
+  fun getLength(v)= List.length(v)
 
 (*Takes a voxel as key, motion and Map, adds motion to list of motions in Map
 * indexed at voxel
@@ -568,16 +574,16 @@ struct
     val vertical = (0.0,voxel_size);
 
     (*create a 2d point representing a voxel*)
-    fun voxelHash(Position :Pos.t) = 
+    fun voxelHash(position :Pos.t) = 
     let
-      val (x,y,_) = Position
+      val (x,y,_) = position
 
       val voxelx = voxel_size * (x/voxel_size)
       val voxely = voxel_size * (y/voxel_size)
 
     in
       (if x < 0.0 then voxelx-voxel_size else voxelx, if y < 0.0 then
-        voxely-voxel_size else voxel_size)
+        voxely-voxel_size else voxely)
     end
 
 
@@ -638,8 +644,30 @@ struct
         ) then true else false
 
   in
-    (if xv<0.0 then swap(low_x,high_x) else ();
+    ((*Voxel.printVoxel(voxel);
+    Motion.printMotion(motion);  *)
+    
+       if xv<0.0 then swap(low_x,high_x) else ();
     if yv< 0.0 then swap(low_y,high_y) else ();
+
+ (*print(Bool.toString((
+            ( Pos.nearlyEqual(xv,0.0,0.01) andalso v_x <= x0 + r andalso x0 - r <= v_x + v_s) (* no motion in x *) orelse 
+                    ((!low_x <= 1.0 andalso 1.0 <= !high_x) orelse (!low_x <= 0.0 andalso 0.0 <= !high_x) orelse (0.0 <= !low_x andalso !high_x <= 1.0))
+        )
+) );
+    
+    print(Bool.toString((
+            ( (Pos.nearlyEqual(yv,0.0,0.01)) andalso (v_y <= y0 + r) andalso (y0 - r <= v_y + v_s ) ) (* no motion in y *) orelse 
+                    ( (!low_y <= 1.0)  andalso (1.0 <= !high_y) )  orelse ( (!low_y
+                    <= 0.0) andalso (0.0 <= !high_y) ) orelse ( (0.0 <= !low_y)
+                    andalso (!high_y <= 1.0))
+        )));
+    
+    print(Bool.toString(( Pos.nearlyEqual(xv,0.0,0.01) orelse (Pos.nearlyEqual(yv,0.0,0.01)) orelse (* no motion in x or y or both *)
+                    (!low_y <= !high_x andalso !high_x <= !high_y) orelse
+                    (!low_y <= !low_x andalso !low_x <= !high_y) orelse (!low_x
+                    <= !low_y andalso !high_y <= !high_x))));     *)   
+
     getResult ()
         
     )
@@ -693,6 +721,7 @@ struct
   in
     if isInVoxel(next_voxel,motion) andalso not (containsKey(next_voxel,!graph_colors))  then 
       (
+        (*print("IN ADDING VOXEL\n");*)
         graph_colors :=  next_voxel :: !graph_colors;
         voxel_map := VoxelMap.put(next_voxel,motion,!voxel_map);
 
@@ -736,7 +765,9 @@ let
     let 
         val (a,b) = Reducer.performVoxelHashing(m,voxel_map,graph_colors)
     in
-        ()(*graph_colors := b @ !graph_colors*)
+        ( (*print ("graph colors length
+        "^Int.toString(List.length(!graph_colors))^"\n");*)
+        graph_colors := []) (*graph_colors := b @ !graph_colors*)
     end
 
   fun traverseListofMotions ([]) = ()
@@ -746,6 +777,8 @@ let
 
 in
    traverseListofMotions(motions);
+(*   print("Voxel map length " ^
+*   Int.toString(VoxelMap.getLength(!voxel_map))^"\n");*)
    VoxelMap.getvalues(voxel_map)
 end 
 
@@ -758,23 +791,30 @@ end
 fun determineCollisions(motions : Motion.t list) = 
 let
   
-  val ret = Collision.empty()
+  val ret = ref (Collision.empty())
 
-  fun determine ([]) = ret 
-    | determine (one :: tl) = 
-  let 
-    val two = List.hd (tl )
-    val vec = Motion.findIntersection(one,two)
-  in
-    if not (Pos.eq(vec,Pos.errorcode)) then
-     (Collision.create(Motion.getAircraft(one),Motion.getAircraft(two),vec) ::
-     ret;
-     determine(tl))
-    else
-     determine(tl)
-  end  
+
+  fun det (one,[]) = !ret
+    | det (one,two :: tl) =
+    let
+      val vec = Motion.findIntersection(one,two)
+    in
+      (*print("collision at "^Pos.getString(vec));*)
+      if not(Pos.eq(vec,Pos.errorcode)) then
+        (ret:= Collision.create(Motion.getAircraft(one),Motion.getAircraft(two),vec) :: !ret;
+         det(one,tl) )
+      else
+        det(one,tl)
+    end
+    
+
+  fun determine ([]) = !ret 
+    | determine (one :: tl) = (det(one,tl) ; determine(tl))
+
 
 in
+    (*print("determine motions length = "^
+    * Int.toString(List.length(motions))^"\n");*)
     determine(motions)
 end 
 
@@ -788,8 +828,16 @@ let
 
   fun map f [] = []
     | map f (x :: xs) = (f x @ map f xs )
+
+ fun printcheck  [] = ()
+    | printcheck (x :: xs) = print("Check list i length "^Int.toString(List.length(x))^"\n")
+
+  val ls = map determineCollisions check 
 in 
- c @ map determineCollisions check 
+  (*print("check length " ^ Int.toString(List.length(check))^"\n");
+  printcheck check;
+  print ("Collision length "^ Int.toString(List.length(ls)) ^"\n");*)
+ c @ ls
 end
 
 
@@ -816,19 +864,20 @@ fun TCM (i,currentFrame) =
                 (cs,old_Pos,position) )
             end
 
+
         in
-        createMotions (c,p)
+         createMotions(c,p)      
         end;
 
 
 (*returns list of motions*)
 fun TRANSIENTDETECTOR_createMotions(currentFrame) = 
 let
-   val mo : Motion.t list = []
+   val mo : Motion.t list ref= ref []
 
  in
-   for (0 to (Frames.getPlaneCnt(currentFrame)-1)) (fn i => TCM(i,currentFrame) :: mo);
-   mo
+   for (0 to (Frames.getPlaneCnt(currentFrame)-1)) (fn i => mo :=  !mo @ [TCM(i,currentFrame)]);
+   !mo
  end;
 
 
@@ -846,7 +895,7 @@ fun TRANSIENTDETECTOR_run(currentFrame) =
                                         Collision.getAircraftTwo(c) ^ "\n" );
                                        printResults(tl,index+1))
  in
-   (Motion.printListOfMotions(motions);print ("CD detected " ^ Int.toString(List.length(collisions)) ^ " collisions \n");
+   ((*Motion.printListOfMotions(motions);*)print ("CD detected " ^ Int.toString(List.length(collisions)) ^ " collisions \n");
    printResults(collisions,0)
    )
  end;
