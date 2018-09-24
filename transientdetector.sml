@@ -895,9 +895,9 @@ fun TRANSIENTDETECTOR_run(currentFrame) =
                                         Collision.getAircraftTwo(c) ^ "\n" );
                                        printResults(tl,index+1))
  in
-   ((*Motion.printListOfMotions(motions);*)print ("CD detected " ^ Int.toString(List.length(collisions)) ^ " collisions \n");
+   (*(*Motion.printListOfMotions(motions);*)print ("CD detected " ^ Int.toString(List.length(collisions)) ^ " collisions \n");
    printResults(collisions,0)
-   )
+   *)()
  end;
 
 
@@ -949,14 +949,14 @@ struct
      fun avg_arr arr = IntInf.div( (Array.foldl (op +) (Int.toLarge(0)) arr),
        Int.toLarge(Array.length(arr)) )
 
-      (*fun std_dev arr = 
+      fun std_dev arr = 
       let
         val mean = avg_arr arr
+        val newarr = (Array.modify (fn i => (i-mean)*(i-mean)) arr;arr);
         fun meanofsqdiff newarr = avg_arr newarr
       in
-        Array.modify (fn i => (i-mean)*(i-mean)) arr;
-        Math.sqrt(meanofsqdiff arr)
-      end*)
+        Math.sqrt(Real.fromLargeInt(meanofsqdiff arr))
+      end 
 
 
 
@@ -988,15 +988,21 @@ struct
         (*printBenchmarkResults (Array.foldr (op ::) [] responseList,0)*)
 
         print("Detector Completed\n");
-        print("Max response time = "^IntInf.toString(max_arr responseList)^"\n");
-        print("Min response time = "^IntInf.toString(min_arr responseList)^"\n");
-        print("Avg response time = "^IntInf.toString(avg_arr responseList)^"\n");
-        (*print("Std Dev response time = "^IntInf.toString(std_dev
-        * responseList)^"\n");*)
-        print("Max Computation time = "^IntInf.toString(max_arr compList)^"\n");
-        print("Min Computation time = "^IntInf.toString(min_arr compList)^"\n");
+        print("=============================================================\n");
+        print("Max response time = "^IntInf.toString(IntInf.div((max_arr responseList),1000))^" ms \n");
+        print("Min response time = "^IntInf.toString(IntInf.div(min_arr responseList,1000))^" ms\n");
+        print("Avg response time = "^IntInf.toString(IntInf.div(avg_arr responseList,1000))^" ms\n");
+        print("Std Dev response time = "^Real.toString((std_dev responseList)/1000.00)^" ms\n");
+        print("=============================================================\n");
+        print("Max Computation time = "^IntInf.toString(IntInf.div(max_arr compList,1000))^" ms\n");
+        print("Min Computation time = "^IntInf.toString(IntInf.div(min_arr compList,1000))^" ms\n");
+        print("Avg computation time = "^IntInf.toString(IntInf.div(avg_arr compList,1000))^" ms\n");
+        print("Std Dev Computation time = "^Real.toString((std_dev compList)/1000.00)^" ms\n");
+        print("=============================================================\n");
         print("Max Jitter time = "^IntInf.toString(max_arr jitList)^"\n");
-        print("Min Jitter time = "^IntInf.toString(min_arr jitList)^"\n")
+        print("Min Jitter time = "^IntInf.toString(min_arr jitList)^"\n");
+        print("Avg Jitter time = "^IntInf.toString(IntInf.div(avg_arr jitList,1000))^" ms\n");
+        print("Std Dev Jitter time = "^Real.toString((std_dev jitList)/1000.00)^" ms\n")
 
     end;
 
