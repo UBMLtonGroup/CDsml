@@ -999,8 +999,8 @@ struct
         print("Avg computation time = "^IntInf.toString(IntInf.div(avg_arr compList,1000))^" ms\n");
         print("Std Dev Computation time = "^Real.toString((std_dev compList)/1000.00)^" ms\n");
         print("=============================================================\n");
-        print("Max Jitter time = "^IntInf.toString(max_arr jitList)^"\n");
-        print("Min Jitter time = "^IntInf.toString(min_arr jitList)^"\n");
+        print("Max Jitter time = "^IntInf.toString(IntInf.div(max_arr jitList,1000))^" ms\n");
+        print("Min Jitter time = "^IntInf.toString(IntInf.div(min_arr jitList,1000))^" ms\n");
         print("Avg Jitter time = "^IntInf.toString(IntInf.div(avg_arr jitList,1000))^" ms\n");
         print("Std Dev Jitter time = "^Real.toString((std_dev jitList)/1000.00)^" ms\n")
 
