@@ -834,8 +834,8 @@ let
 
   val ls = map determineCollisions check 
 in 
-  (*print("check length " ^ Int.toString(List.length(check))^"\n");
-  printcheck check;
+  (*print("check length " ^ Int.toString(List.length(check))^"\n");*)
+  (*printcheck check;
   print ("Collision length "^ Int.toString(List.length(ls)) ^"\n");*)
  c @ ls
 end
@@ -912,16 +912,141 @@ struct
 
   (*To do read properly from file*)
 
+
+    fun sleepForPeriod(t) =
+     OS.Process.sleep t 
+
+
+    val periodint = 50
+    val period = Time.fromMilliseconds periodint;  
+
+
+
+        
+
+
+    fun printBenchmarkResults([] : IntInf.int list,i: int) = print("Detector completed successfully\n")
+      | printBenchmarkResults(x ::xs,i ) =
+      let
+        val cnt = i+1
+      in 
+        if (x >= Time.toMicroseconds(period)) then
+          (print("Task "^ Int.toString(i)^" missed the deadline\n");
+            printBenchmarkResults(xs,cnt ))
+        else
+          printBenchmarkResults(xs,cnt)
+      end
+
+
+    
+
+    fun benchmarkCD ts tc tr  =
+    let
+      
+     fun min_arr arr = Array.foldl IntInf.min (Array.sub(arr,0)) arr 
+     fun max_arr arr = Array.foldl IntInf.max (Array.sub(arr,0)) arr
+
+     fun avg_arr arr = IntInf.div( (Array.foldl (op +) (Int.toLarge(0)) arr),
+       Int.toLarge(Array.length(arr)) )
+
+      (*fun std_dev arr = 
+      let
+        val mean = avg_arr arr
+        fun meanofsqdiff newarr = avg_arr newarr
+      in
+        Array.modify (fn i => (i-mean)*(i-mean)) arr;
+        Math.sqrt(meanofsqdiff arr)
+      end*)
+
+
+
+      val responseList =  Array.array(Array.length(tr),Time.toMicroseconds(Time.zeroTime))
+      val compList =  Array.array(Array.length(tr),Time.toMicroseconds(Time.zeroTime))
+      val jitList =  Array.array(Array.length(tr),Time.toMicroseconds(Time.zeroTime))
+
+      fun calculateTimes (i) = 
+        let 
+            val cTime = (Array.sub(tc,i) - Array.sub(ts,i))
+            val jTime = (Array.sub(ts,i) - Array.sub(tr,i))
+            val rTime = (cTime + jTime)
+        in
+          (*print(IntInf.toString(cTime)^": comp time \n");
+          print(IntInf.toString(jTime)^": jitter time \n");
+
+          print(IntInf.toString(Array.sub(tr,i))^": ideal release time \n");
+          print(IntInf.toString(rTime)^": respnse time \n");*)
+          Array.update(responseList,i,rTime);
+          Array.update(compList,i,cTime); 
+          Array.update(jitList,i,jTime) 
+        end 
+        
+
+    in
+        for(0 to (Array.length(tr) -1)) (fn i => calculateTimes(i));
+        (*for(0 to (Array.length(tr) -1)) (fn i =>
+        * print(IntInf.toString(Array.sub(responseList,i))^"\n"))*)
+        (*printBenchmarkResults (Array.foldr (op ::) [] responseList,0)*)
+
+        print("Detector Completed\n");
+        print("Max response time = "^IntInf.toString(max_arr responseList)^"\n");
+        print("Min response time = "^IntInf.toString(min_arr responseList)^"\n");
+        print("Avg response time = "^IntInf.toString(avg_arr responseList)^"\n");
+        (*print("Std Dev response time = "^IntInf.toString(std_dev
+        * responseList)^"\n");*)
+        print("Max Computation time = "^IntInf.toString(max_arr compList)^"\n");
+        print("Min Computation time = "^IntInf.toString(min_arr compList)^"\n");
+        print("Max Jitter time = "^IntInf.toString(max_arr jitList)^"\n");
+        print("Min Jitter time = "^IntInf.toString(min_arr jitList)^"\n")
+
+    end;
+
+
+
+
+
+
+
+
     fun main() = 
     let 
-      val frameBuffer = Frames.readFromFile("frames.txt")
-        
-      fun loop ([]) = ()
-        | loop(x::xs) =( (*Frames.printFrame(x)*) TRANSIENTDETECTOR_run(x) ; loop xs)
+      val frameBuffer = Frames.readFromFile("frames_col.txt")
+
+      val maxFrames = 1000
+      
+      
+      val ts = Array.array(maxFrames,Time.toMicroseconds (Time.zeroTime)) 
+      val tc = Array.array(maxFrames,Time.toMicroseconds(Time.zeroTime) )
+      
+      val tr = Array.array(maxFrames,Time.toMicroseconds(Time.zeroTime) )
+
+    fun populateIdealTime(t0) = 
+        for(0 to (Array.length(tr)-1) ) (fn i => Array.update(tr,i, (t0 + (Time.toMicroseconds(period)* Int.toLarge(i))) ) ) 
+
+           
+      val responseTimeList : Time.time list ref  = ref [];
+      
+      fun loop ([],i) = ()
+        | loop(x::xs,i) = if not(i = maxFrames) then (Array.update(ts,i,Time.toMicroseconds (Time.now()));
+                                                        (*print(IntInf.toString(Array.sub(ts,i))^"\n"); *)
+                                                        TRANSIENTDETECTOR_run(x) ; 
+                                                        Array.update(tc,i,Time.toMicroseconds(Time.now ()) );
+                                                        (*print(IntInf.toString(Time.toMicroseconds(Time.now()))^"\n");*)
+                                                        sleepForPeriod(period);
+                                                        loop(xs,(i+1)) ) 
+                          else
+                            ()
     in
-      (*print (Int.toString(List.length(frameBuffer)))*)
-      loop frameBuffer
-    end
+      (*print (Int.toString(List.length(maxFrames)))*)
+      loop(frameBuffer, 0);
+
+      (*printArray(ts);*)
+        
+     populateIdealTime(Array.sub(ts,0));
+
+
+      (benchmarkCD ts tc tr)
+
+    end;
 
 
 
