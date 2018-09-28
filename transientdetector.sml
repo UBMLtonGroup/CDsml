@@ -1479,9 +1479,16 @@ Frames.createFrame( 40, Array.fromList( [ "plane0","plane1","plane2","plane3","p
 end
 
 
+val rec delay =
+   fn 0 => ()
+    | n => delay (n - 1)
+    
+val rec loop =
+   fn 0 => ()
+    | n => ((*print ("loop" ^ Int.toString(n) ^"\n");*) delay 50000000; loop (n - 1))
 
 
-val _ = Driver.main()
+val _ = (PThread.spawn(fn () => Driver.main());PThread.spawn(fn () => loop 10); PThread.run())
 
 
 val _ = print ("done\n")
