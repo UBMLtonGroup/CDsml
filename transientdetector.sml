@@ -990,8 +990,8 @@ struct
           (*print(IntInf.toString(cTime)^": comp time \n");
           print(IntInf.toString(jTime)^": jitter time \n");
 
-          print(IntInf.toString(Array.sub(tr,i))^": ideal release time \n");
-          print(IntInf.toString(rTime)^": respnse time \n");*)
+          print(IntInf.toString(Array.sub(tr,i))^": ideal release time \n");*)
+          print(IntInf.toString(rTime)^"\n");
           Array.update(responseList,i,rTime);
           Array.update(compList,i,cTime); 
           Array.update(jitList,i,jTime) 
@@ -999,12 +999,12 @@ struct
         
 
     in
-        for(0 to (Array.length(tr) -1)) (fn i => calculateTimes(i));
+        for(0 to (Array.length(tr) -1)) (fn i => calculateTimes(i))
         (*for(0 to (Array.length(tr) -1)) (fn i =>
         * print(IntInf.toString(Array.sub(responseList,i))^"\n"))*)
         (*printBenchmarkResults (Array.foldr (op ::) [] responseList,0)*)
 
-        print("Detector Completed\n");
+        (*print("Detector Completed\n");
         print("=============================================================\n");
         print("Max response time = "^IntInf.toString(IntInf.div((max_arr responseList),1000))^" ms \n");
         print("Min response time = "^IntInf.toString(IntInf.div(min_arr responseList,1000))^" ms\n");
@@ -1020,7 +1020,7 @@ struct
         print("Min Jitter time = "^IntInf.toString(IntInf.div(min_arr jitList,1000))^" ms\n");
         print("Avg Jitter time = "^IntInf.toString(IntInf.div(avg_arr jitList,1000))^" ms\n");
         print("Std Dev Jitter time = "^Real.toString((std_dev jitList)/1000.00)^" ms\n")
-
+        *)
     end;
 
 
