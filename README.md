@@ -10,4 +10,4 @@ javac ReadFrames.java && java ReadFrames col.bin
 To run the benchmark: 
 
 
-mlton transientdetector.sml && ./transientdetector
+mlton runCD.mlb && ./runCD
