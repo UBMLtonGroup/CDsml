@@ -73,7 +73,7 @@ structure PThread:
          (switch (fn t =>
                   (topLevel := SOME (Thread.prepare (t, ()))
                    ; new (fn () => (setHandler (alrm, Handler.handler schedule)
-                                    ; setItimer (Time.fromMilliseconds 50)))))
+                                    ; setItimer (Time.fromMilliseconds 20)))))
           ; setItimer Time.zeroTime
           ; ignore alrm
           ; topLevel := NONE)
